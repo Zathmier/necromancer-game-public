@@ -6,10 +6,13 @@ const GridScript     = preload("res://scripts/debug/Grid.gd")
 const WorldGenScript = preload("res://scripts/world/WorldGen.gd")
 const WorldViewScript= preload("res://scripts/world/WorldDebugPainter.gd")
 
+const TILE := 32
+const HALF_TILE := TILE / 2
+
 func _ready() -> void:
 	_configure_window()
 
-	# Screen overlay grid so it’s camera-independent
+	# Screen overlay grid
 	var grid_layer := CanvasLayer.new()
 	grid_layer.name = "GridLayer"
 	add_child(grid_layer)
@@ -35,7 +38,14 @@ func _ready() -> void:
 	player.name = "Player"
 	player.set_script(PlayerScript)
 	add_child(player)
-	player.global_position = get_viewport_rect().size * 0.5
+
+	# Spawn on the center tile of the current view
+	var center := get_viewport_rect().size * 0.5
+	var spawn := Vector2(
+		round(center.x / TILE) * TILE + HALF_TILE,
+		round(center.y / TILE) * TILE + HALF_TILE
+	)
+	player.global_position = spawn
 
 	# UI Console
 	var ui := CanvasLayer.new()

@@ -1,80 +1,127 @@
 extends CharacterBody2D
-# Click-to-move with smooth snap-to-grid landings, pixel-snapped camera.
+# Grid-following click-to-move (8-directional, least steps), smooth, exact tile-center landings.
+# Godot 4.5 / GDScript
 
 const TILE := 32
 const HALF_TILE := TILE * 0.5
 
-var agent: NavigationAgent2D
-@export var move_speed: float = 240.0
-@export var accel: float = 12.0
+@export var move_speed: float = 240.0  # pixels/sec
 
-# Track the snapped target to avoid “snap while en route” glitches
-var target_pos: Vector2 = Vector2.INF
-var has_target: bool = false
+var _path: PackedVector2Array = PackedVector2Array()  # world-space tile centers
+var _current: Vector2 = Vector2.ZERO                  # current waypoint (world-space)
+var _has_path: bool = false
 
-var _auto_nav: NavigationRegion2D = null
+func _enter_tree() -> void:
+	# If the scene sets an initial position, we still ensure we land exactly on a tile.
+	# Do it deferred to run AFTER parent/scene positions are finalized.
+	call_deferred("_deferred_spawn_snap")
 
 func _ready() -> void:
 	_ensure_sprite()
 	_ensure_collision()
-	_ensure_agent()
 	_ensure_camera()
-	_ensure_nav_region_for_testing()
-	if not Engine.is_editor_hint():
-		_register_console_cmds()
+
+func _deferred_spawn_snap() -> void:
+	global_position = _snap_to_tile_center(global_position)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var tgt := _snap_to_tile_center(get_global_mouse_position())
-		_set_destination(tgt)
-		Bus.send_output("moving to (%.1f, %.1f)" % [tgt.x, tgt.y])
+		var target_ws: Vector2 = _snap_to_tile_center(get_global_mouse_position())
+		_set_destination(target_ws)
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
-	# Pixel-snap camera so world tiles & grid are 1:1 with screen pixels
+	# Pixel-snap the camera so tiles & grid align 1:1 with screen pixels.
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam:
 		cam.global_position = cam.global_position.round()
 
-	# Arrival logic: only snap when REALLY at the target
-	if has_target:
-		var d := global_position.distance_to(target_pos)
-		if d <= 1.25: # nice crisp finish
-			global_position = target_pos
-			velocity = Vector2.ZERO
-			has_target = false
-			agent.set_target_position(global_position) # clear residual path
-			move_and_slide()
-			return
-
-	if agent.is_navigation_finished():
-		# No path (e.g., you clicked very close). Ease to nearest tile center but don’t fight a live path.
-		var snap := _snap_to_tile_center(global_position)
-		global_position = global_position.lerp(snap, clamp(10.0 * delta, 0.0, 1.0))
+	if not _has_path:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
 
-	# Follow path normally
-	var next := agent.get_next_path_position()
-	var dir := (next - global_position)
-	if dir.length() > 0.001:
-		var desired := dir.normalized() * move_speed
-		velocity = velocity.lerp(desired, clamp(accel * delta, 0.0, 1.0))
-	else:
-		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
+	# Move toward current waypoint without overshoot.
+	var to: Vector2 = _current - global_position
+	var dist: float = to.length()
+	var step: float = move_speed * delta
 
+	if dist <= step:
+		# Arrived at this waypoint. Snap exactly, then advance.
+		global_position = _current
+		if _path.size() > 0:
+			_path.remove_at(0)
+		if _path.size() > 0:
+			_current = _path[0]
+		else:
+			_has_path = false
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
+
+	velocity = to.normalized() * move_speed
 	move_and_slide()
 
-# ---------------- helpers ----------------
+# ---------------- Pathing helpers ----------------
 
-func _set_destination(p: Vector2) -> void:
-	target_pos = p
-	has_target = true
-	agent.set_target_position(p)
+func _set_destination(target_ws: Vector2) -> void:
+	# Build an 8-direction, least-steps path (maximally diagonal, then straight).
+	var start_t: Vector2i = _world_to_tile(global_position)
+	var goal_t:  Vector2i = _world_to_tile(target_ws)
+	_path = _build_chebyshev_path(start_t, goal_t)   # world-space waypoints at tile centers
+	_has_path = _path.size() > 0
+	if _has_path:
+		_current = _path[0]
+
+# Chebyshev shortest path on a grid with diagonals allowed:
+# Do min(|dx|,|dy|) diagonal steps, then finish remaining straight steps.
+func _build_chebyshev_path(start_t: Vector2i, goal_t: Vector2i) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var t := start_t
+
+	var dx: int = goal_t.x - t.x
+	var dy: int = goal_t.y - t.y
+	var sx: int = 0 if dx == 0 else (1 if dx > 0 else -1)
+	var sy: int = 0 if dy == 0 else (1 if dy > 0 else -1)
+
+	var n_diag: int = mini(abs(dx), abs(dy))
+	var n_ax:   int = maxi(abs(dx), abs(dy)) - n_diag
+
+	# 1) Diagonals
+	for i in n_diag:
+		t.x += sx
+		t.y += sy
+		pts.append(_tile_to_world(t))
+
+	# 2) Straights (whichever axis still has remaining delta)
+	if abs(dx) > abs(dy):
+		for i in n_ax:
+			t.x += sx
+			pts.append(_tile_to_world(t))
+	elif abs(dy) > abs(dx):
+		for i in n_ax:
+			t.y += sy
+			pts.append(_tile_to_world(t))
+	# if equal, n_ax == 0 and we’re done
+
+	return pts
+
+# --- conversions & snap ---
+
+func _world_to_tile(p: Vector2) -> Vector2i:
+	# Map world to tile index where centers are n*TILE + HALF_TILE
+	return Vector2i(
+		roundi((p.x - HALF_TILE) / TILE),
+		roundi((p.y - HALF_TILE) / TILE)
+	)
+
+func _tile_to_world(t: Vector2i) -> Vector2:
+	return Vector2(t.x * TILE + HALF_TILE, t.y * TILE + HALF_TILE)
 
 func _snap_to_tile_center(p: Vector2) -> Vector2:
-	return Vector2(round(p.x / TILE) * TILE + HALF_TILE, round(p.y / TILE) * TILE + HALF_TILE)
+	return _tile_to_world(_world_to_tile(p))
+
+# ---------------- Node ensure (visuals & camera only) ----------------
 
 func _ensure_sprite() -> void:
 	var spr := get_node_or_null("Sprite2D") as Sprite2D
@@ -99,17 +146,6 @@ func _ensure_collision() -> void:
 		shape.radius = 12.0
 		col.shape = shape
 
-func _ensure_agent() -> void:
-	agent = get_node_or_null("NavigationAgent2D") as NavigationAgent2D
-	if agent == null:
-		agent = NavigationAgent2D.new()
-		agent.name = "NavigationAgent2D"
-		add_child(agent)
-	# Tighten distances so arrival detection is clean
-	agent.path_desired_distance = 2.0
-	agent.target_desired_distance = 1.0
-	agent.avoidance_enabled = false
-
 func _ensure_camera() -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam == null:
@@ -118,53 +154,3 @@ func _ensure_camera() -> void:
 		add_child(cam)
 	cam.enabled = true
 	cam.make_current()
-
-func _ensure_nav_region_for_testing() -> void:
-	var root := get_tree().current_scene
-	if root == null:
-		return
-	_auto_nav = root.find_child("AutoNav", true, false) as NavigationRegion2D
-	if _auto_nav != null:
-		return
-
-	# HUGE dev polygon so you can roam freely
-	var R := 20000.0
-	var poly := NavigationPolygon.new()
-	poly.add_outline(PackedVector2Array([
-		Vector2(-R, -R), Vector2(R, -R),
-		Vector2(R, R),   Vector2(-R, R)
-	]))
-	poly.make_polygons_from_outlines() # dev-only
-
-	var region := NavigationRegion2D.new()
-	region.name = "AutoNav"
-	region.navigation_polygon = poly
-	_auto_nav = region
-	call_deferred("_add_nav_region_deferred", root, region)
-
-func _add_nav_region_deferred(root: Node, region: NavigationRegion2D) -> void:
-	if is_instance_valid(root) and region.get_parent() == null:
-		root.add_child(region)
-	_auto_nav = region
-
-# ---------------- console cmds ----------------
-
-func _register_console_cmds() -> void:
-	ConsoleRouter.register_cmd("where", func(_a):
-		Bus.send_output("pos = (%.1f, %.1f)" % [global_position.x, global_position.y])
-	, "Show player position")
-
-	ConsoleRouter.register_cmd("speed", func(a):
-		if a.size() < 1:
-			Bus.send_output("usage: speed <value>"); return
-		move_speed = max(10.0, float(a[0]))
-		Bus.send_output("move_speed = %.1f" % move_speed)
-	, "Set move speed")
-
-	ConsoleRouter.register_cmd("goto", func(a):
-		if a.size() < 2:
-			Bus.send_output("usage: goto <x> <y>"); return
-		var tgt := _snap_to_tile_center(Vector2(float(a[0]), float(a[1])))
-		_set_destination(tgt)
-		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
-	, "Move to position")
