@@ -1,18 +1,30 @@
-# res://scripts/Main.gd
 extends Node2D
 
-const PlayerScript  = preload("res://scripts/player/Player.gd")
-const ConsoleScript = preload("res://scripts/ui/Console.gd")
-const GridScript    = preload("res://scripts/debug/Grid.gd")
+const PlayerScript   = preload("res://scripts/player/Player.gd")
+const ConsoleScript  = preload("res://scripts/ui/Console.gd")
+const GridScript     = preload("res://scripts/debug/Grid.gd")
+const WorldGenScript = preload("res://scripts/world/WorldGen.gd")
+const WorldViewScript= preload("res://scripts/world/WorldDebugPainter.gd")
 
 func _ready() -> void:
 	_configure_window()
 
-	# Grid (draws behind)
+	# Grid
 	var grid := Node2D.new()
 	grid.name = "Grid"
 	grid.set_script(GridScript)
 	add_child(grid)
+
+	# World generator + debug painter
+	var world := Node.new()
+	world.name = "WorldGen"
+	world.set_script(WorldGenScript)
+	add_child(world)
+
+	var view := Node2D.new()
+	view.name = "WorldView"
+	view.set_script(WorldViewScript)
+	add_child(view)
 
 	# Player
 	var player := CharacterBody2D.new()
@@ -32,4 +44,4 @@ func _ready() -> void:
 	ui.add_child(console)
 
 func _configure_window() -> void:
-	DisplayServer.window_set_size(Vector2i(1920,1080))
+	DisplayServer.window_set_size(Vector2i(1920, 1080))

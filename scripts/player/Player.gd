@@ -11,12 +11,10 @@ func _ready() -> void:
 	_ensure_agent()
 	_ensure_camera()
 	_ensure_nav_region_for_testing()
-
 	if not Engine.is_editor_hint():
 		_register_console_cmds()
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Left-click sets destination
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var target := get_global_mouse_position()
 		agent.set_target_position(target)
@@ -28,7 +26,6 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
 		move_and_slide()
 		return
-
 	var next := agent.get_next_path_position()
 	var dir := (next - global_position)
 	if dir.length() > 0.001:
@@ -36,11 +33,9 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.lerp(desired, clamp(accel * delta, 0.0, 1.0))
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
-
 	move_and_slide()
 
-# ---------------- ensure helpers ----------------
-
+# ---- ensure helpers ----
 func _ensure_sprite() -> void:
 	var spr := get_node_or_null("Sprite2D") as Sprite2D
 	if spr == null:
@@ -48,11 +43,10 @@ func _ensure_sprite() -> void:
 		spr.name = "Sprite2D"
 		add_child(spr)
 	if spr.texture == null:
-		# Use the imported project icon as a placeholder
 		var tex: Texture2D = preload("res://icon.svg")
 		spr.texture = tex
 		spr.centered = true
-		spr.scale = Vector2(0.25, 0.25)  # shrink so it’s not huge
+		spr.scale = Vector2(0.25, 0.25)
 
 func _ensure_collision() -> void:
 	var col := get_node_or_null("CollisionShape2D") as CollisionShape2D
@@ -88,18 +82,10 @@ func _ensure_nav_region_for_testing() -> void:
 	var root := get_tree().current_scene
 	if root == null: return
 	if root.find_child("AutoNav", true, false) != null: return
-
 	var vp := get_viewport_rect().size
 	var poly := NavigationPolygon.new()
-	poly.add_outline(PackedVector2Array([
-		Vector2(0, 0),
-		Vector2(vp.x, 0),
-		Vector2(vp.x, vp.y),
-		Vector2(0, vp.y),
-	]))
-	# Lightweight dev-time triangulation (deprecated but fine for now)
-	poly.make_polygons_from_outlines()
-
+	poly.add_outline(PackedVector2Array([Vector2(0,0), Vector2(vp.x,0), Vector2(vp.x,vp.y), Vector2(0,vp.y)]))
+	poly.make_polygons_from_outlines() # dev-only; ok to be deprecated
 	var region := NavigationRegion2D.new()
 	region.name = "AutoNav"
 	region.navigation_polygon = poly
@@ -109,40 +95,21 @@ func _add_nav_region_deferred(root: Node, region: NavigationRegion2D) -> void:
 	if is_instance_valid(root) and region.get_parent() == null:
 		root.add_child(region)
 
-# ---------------- console cmds ----------------
-
+# ---- console cmds ----
 func _register_console_cmds() -> void:
 	ConsoleRouter.register_cmd("where", func(_a):
 		Bus.send_output("pos = (%.1f, %.1f)" % [global_position.x, global_position.y])
 	, "Show player position")
 
 	ConsoleRouter.register_cmd("speed", func(a):
-		if a.size() < 1:
-			Bus.send_output("usage: speed <value>"); return
+		if a.size() < 1: Bus.send_output("usage: speed <value>"); return
 		move_speed = max(10.0, float(a[0]))
 		Bus.send_output("move_speed = %.1f" % move_speed)
 	, "Set move speed")
 
 	ConsoleRouter.register_cmd("goto", func(a):
-		if a.size() < 2:
-			Bus.send_output("usage: goto <x> <y>"); return
+		if a.size() < 2: Bus.send_output("usage: goto <x> <y>"); return
 		var tgt := Vector2(float(a[0]), float(a[1]))
 		agent.set_target_position(tgt)
 		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
 	, "Move to position")
-
-	# world tile & chunk info (TILE=32, CHUNK=48)
-	ConsoleRouter.register_cmd("tile", func(_a):
-		var t := Vector2i(floor(global_position.x / 32.0), floor(global_position.y / 32.0))
-		Bus.send_output("tile = (%d, %d)" % [t.x, t.y])
-	, "Show world tile coords")
-
-	ConsoleRouter.register_cmd("chunk", func(_a):
-		var wx := int(floor(global_position.x / 32.0))
-		var wy := int(floor(global_position.y / 32.0))
-		var cx := int(floor(wx / 48.0))
-		var cy := int(floor(wy / 48.0))
-		var tx := wx - cx * 48
-		var ty := wy - cy * 48
-		Bus.send_output("chunk=(%d,%d) local=(%d,%d)" % [cx, cy, tx, ty])
-	, "Show chunk coords + local tile")
