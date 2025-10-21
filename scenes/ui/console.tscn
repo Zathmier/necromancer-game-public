@@ -1,0 +1,38 @@
+[gd_scene load_steps=2 format=3 uid="uid://cv0s34pu61x54"]
+
+[ext_resource type="Script" uid="uid://b1f1bgnd1mnw5" path="res://scripts/ui/Console.gd" id="1_vh00w"]
+
+[node name="Console" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_vh00w")
+
+[node name="ConsolePanel" type="Panel" parent="."]
+clip_contents = true
+layout_mode = 0
+
+[node name="VBox" type="VBoxContainer" parent="ConsolePanel"]
+layout_mode = 0
+offset_right = 68.0
+offset_bottom = 215.0
+
+[node name="LogBox" type="RichTextLabel" parent="ConsolePanel/VBox"]
+custom_minimum_size = Vector2(0, 180)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0, 0, 0, 1)
+theme_override_colors/font_selected_color = Color(1, 1, 1, 0)
+theme_override_colors/font_outline_color = Color(1, 0, 0, 1)
+
+[node name="InputBox" type="LineEdit" parent="ConsolePanel/VBox"]
+z_index = 1
+layout_mode = 2
+placeholder_text = "Enter command..."
+caret_blink = true
+caret_blink_interval = 0.5
+
+[connection signal="text_submitted" from="ConsolePanel/VBox/InputBox" to="." method="_on_input_box_text_submitted"]
