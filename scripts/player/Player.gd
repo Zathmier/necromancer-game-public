@@ -1,31 +1,17 @@
-# res://scripts/player/Player.gd
 extends CharacterBody2D
-# Godot 4.5 — code-only click-to-move
+# Godot 4.5 — code-only click-to-move, self-building visuals + physics
 
 var agent: NavigationAgent2D
 @export var move_speed: float = 240.0
 @export var accel: float = 12.0
 
 func _ready() -> void:
-	# Ensure NavigationAgent2D child exists
-	agent = get_node_or_null("NavigationAgent2D") as NavigationAgent2D
-	if agent == null:
-		agent = NavigationAgent2D.new()
-		agent.name = "NavigationAgent2D"
-		add_child(agent)
-
-	# Agent tuning
-	agent.path_desired_distance = 4.0
-	agent.target_desired_distance = 4.0
-	agent.avoidance_enabled = false
-
-	# Ensure Camera2D exists and follows
+	_ensure_sprite()
+	_ensure_collision()
+	_ensure_agent()
 	_ensure_camera()
-
-	# Dev convenience: ensure there is a walkable nav region
 	_ensure_nav_region_for_testing()
 
-	# Console commands (only in game)
 	if not Engine.is_editor_hint():
 		_register_console_cmds()
 
@@ -53,23 +39,55 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-# ---------------- helpers ----------------
+# ---------------- ensure helpers ----------------
+
+func _ensure_sprite() -> void:
+	var spr := get_node_or_null("Sprite2D") as Sprite2D
+	if spr == null:
+		spr = Sprite2D.new()
+		spr.name = "Sprite2D"
+		add_child(spr)
+	if spr.texture == null:
+		# Use the imported project icon as a placeholder
+		var tex: Texture2D = preload("res://icon.svg")
+		spr.texture = tex
+		spr.centered = true
+		spr.scale = Vector2(0.25, 0.25)  # shrink so it’s not huge
+
+func _ensure_collision() -> void:
+	var col := get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if col == null:
+		col = CollisionShape2D.new()
+		col.name = "CollisionShape2D"
+		add_child(col)
+	if col.shape == null:
+		var shape := CircleShape2D.new()
+		shape.radius = 12.0
+		col.shape = shape
+
+func _ensure_agent() -> void:
+	agent = get_node_or_null("NavigationAgent2D") as NavigationAgent2D
+	if agent == null:
+		agent = NavigationAgent2D.new()
+		agent.name = "NavigationAgent2D"
+		add_child(agent)
+	agent.path_desired_distance = 4.0
+	agent.target_desired_distance = 4.0
+	agent.avoidance_enabled = false
 
 func _ensure_camera() -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam == null:
 		cam = Camera2D.new()
 		cam.name = "Camera2D"
-		cam.enabled = true
-		cam.zoom = Vector2.ONE  # keep 1:1 for now
 		add_child(cam)
+	cam.enabled = true
 	cam.make_current()
 
 func _ensure_nav_region_for_testing() -> void:
 	var root := get_tree().current_scene
 	if root == null: return
-	if root.find_child("AutoNav", true, false) != null:
-		return
+	if root.find_child("AutoNav", true, false) != null: return
 
 	var vp := get_viewport_rect().size
 	var poly := NavigationPolygon.new()
@@ -79,19 +97,19 @@ func _ensure_nav_region_for_testing() -> void:
 		Vector2(vp.x, vp.y),
 		Vector2(0, vp.y),
 	]))
-	# Lightweight build (deprecated but fine for quick dev)
+	# Lightweight dev-time triangulation (deprecated but fine for now)
 	poly.make_polygons_from_outlines()
 
 	var region := NavigationRegion2D.new()
 	region.name = "AutoNav"
 	region.navigation_polygon = poly
-
-	# Defer the add so we don't collide with scene setup
 	call_deferred("_add_nav_region_deferred", root, region)
 
 func _add_nav_region_deferred(root: Node, region: NavigationRegion2D) -> void:
 	if is_instance_valid(root) and region.get_parent() == null:
 		root.add_child(region)
+
+# ---------------- console cmds ----------------
 
 func _register_console_cmds() -> void:
 	ConsoleRouter.register_cmd("where", func(_a):
