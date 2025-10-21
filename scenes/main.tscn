@@ -1,7 +1,12 @@
-[gd_scene load_steps=3 format=3 uid="uid://dsuob5h28721r"]
+[gd_scene load_steps=4 format=3 uid="uid://dsuob5h28721r"]
 
 [ext_resource type="PackedScene" uid="uid://cv0s34pu61x54" path="res://scenes/ui/console.tscn" id="1_0wfyh"]
 [ext_resource type="PackedScene" uid="uid://ckaeycsk67ecw" path="res://scenes/player.tscn" id="1_o5qli"]
+
+[sub_resource type="NavigationPolygon" id="NavigationPolygon_0wfyh"]
+vertices = PackedVector2Array(4198.7188, 2393.8438, -3236.3438, 2298.1406, -2618.4063, -1671.1328, 3351.8516, -1766.8594)
+polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
+outlines = Array[PackedVector2Array]([PackedVector2Array(-2627, -1681, 3360, -1777, 4211, 2404, -3248, 2308)])
 
 [node name="Main" type="Node2D"]
 
@@ -13,4 +18,7 @@ layer = 10
 [node name="ColorRect" type="ColorRect" parent="."]
 color = Color(0.35906908, 0.35906908, 0.35906908, 1)
 
-[node name="Player" parent="." instance=ExtResource("1_o5qli")]
+[node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]
+navigation_polygon = SubResource("NavigationPolygon_0wfyh")
+
+[node name="Player" parent="NavigationRegion2D" instance=ExtResource("1_o5qli")]
