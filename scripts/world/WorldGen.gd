@@ -1,6 +1,4 @@
 extends Node
-# Deterministic height/biome sampling (debug-friendly)
-
 const CHUNK_TILES := 48
 
 var seed: int = 1337
@@ -16,7 +14,8 @@ func set_seed(s: int) -> void:
 func _build_noise() -> void:
 	noise = FastNoiseLite.new()
 	noise.seed = seed
-	noise.noise_type = FastNoiseLite.TYPE_OPEN_SIMPLEX2
+	# TYPE_OPEN_SIMPLEX2 isn't present in some builds — TYPE_SIMPLEX is stable.
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.frequency = 0.0025
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	noise.fractal_octaves = 5

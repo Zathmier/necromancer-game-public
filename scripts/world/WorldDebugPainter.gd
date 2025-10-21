@@ -19,30 +19,32 @@ func _ready() -> void:
 func _process(_dt: float) -> void:
 	if world == null:
 		world = get_tree().current_scene.find_child("WorldGen", true, false)
-	var cam := get_viewport().get_camera_2d()
-	if cam == null: return
-	var sz := get_viewport_rect().size
-	var origin := cam.global_position
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	if cam == null:
+		return
+	var sz: Vector2 = get_viewport_rect().size
+	var origin: Vector2 = cam.global_position
 	if origin.distance_to(_last_origin) > 8.0 or _last_size != sz:
 		_last_origin = origin
 		_last_size = sz
 		queue_redraw()
 
 func _draw() -> void:
-	if world == null: return
-	var cam := get_viewport().get_camera_2d()
-	var vs := get_viewport_rect().size
-	var half := vs * 0.5
-	var tl := (cam.global_position - half) if cam != null else (-half)
+	if world == null:
+		return
+	var cam: Camera2D = get_viewport().get_camera_2d()
+	var vs: Vector2 = get_viewport_rect().size
+	var half: Vector2 = vs * 0.5
+	var tl: Vector2 = (cam.global_position - half) if cam != null else (-half)
 
-	var sx := int(floor(tl.x / TILE))
-	var sy := int(floor(tl.y / TILE))
-	var ex := int(floor((tl.x + vs.x) / TILE))
-	var ey := int(floor((tl.y + vs.y) / TILE))
+	var sx: int = int(floor(tl.x / TILE))
+	var sy: int = int(floor(tl.y / TILE))
+	var ex: int = int(floor((tl.x + vs.x) / TILE))
+	var ey: int = int(floor((tl.y + vs.y) / TILE))
 
 	for ty in range(sy, ey + 1):
 		for tx in range(sx, ex + 1):
-			var biome := world.get_biome(tx, ty)
-			var col := colors.get(biome, Color(1, 0, 1, 0.8))
-			var p := Vector2(tx * TILE, ty * TILE)
+			var biome: String = world.get_biome(tx, ty) # <-- typed
+			var col: Color = colors.get(biome, Color(1, 0, 1, 0.8))
+			var p: Vector2 = Vector2(tx * TILE, ty * TILE)
 			draw_rect(Rect2(p, Vector2(TILE, TILE)), col, true)
