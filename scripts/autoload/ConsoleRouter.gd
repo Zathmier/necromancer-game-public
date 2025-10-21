@@ -15,18 +15,22 @@ func _on_console_command(text: String) -> void:
 	var cmd := parts[0].to_lower()
 	var args := parts.slice(1, parts.size())
 	if not commands.has(cmd):
+		Bus.send_output("Unknown command: %s" % cmd)
 		Log.w("Console", "Unknown command: %s" % cmd)
 		return
 	commands[cmd]["fn"].call(args)
 
 func _register_default() -> void:
 	register_cmd("help", func(_a):
-		var ks := commands.keys()
-		ks.sort()
+		var ks := commands.keys(); ks.sort()
 		for k in ks:
-			Log.i("Console", "%s — %s" % [k, commands[k]["desc"]])
+			var line := "%s — %s" % [k, commands[k]["desc"]]
+			Bus.send_output(line)
+			Log.i("Console", line)
 	, "List commands")
 
 	register_cmd("echo", func(a):
-		Log.i("Console", " ".join(a))
+		var line := " ".join(a)
+		Bus.send_output(line)
+		Log.i("Console", line)
 	, "Echo text")
