@@ -54,7 +54,7 @@ func _build_ui() -> void:
 	vbox.offset_top = 8
 	vbox.offset_right = -8
 	vbox.offset_bottom = -8
-#	vbox.separator = 6
+	vbox.add_theme_constant_override("separation", 6)
 
 	# Output log
 	output_log = vbox.get_node_or_null("OutputLog") as RichTextLabel
