@@ -12,7 +12,6 @@ var _last_cam := Vector2.INF
 var _last_size := Vector2.ZERO
 
 func _ready() -> void:
-	# we’re on a CanvasLayer (from Main.gd), so z_index doesn’t matter
 	z_index = 0
 	if not Engine.is_editor_hint():
 		_register_console_cmd()
@@ -32,30 +31,33 @@ func _draw() -> void:
 
 	var vs: Vector2 = get_viewport_rect().size
 	var zoom: Vector2 = cam.zoom
-	# world-space center of the screen
 	var center_ws: Vector2 = cam.get_screen_center_position()
-	# world-space top-left of the visible rectangle
 	var tl_ws: Vector2 = center_ws - (vs * 0.5) * zoom
 	var br_ws: Vector2 = tl_ws + vs * zoom
 
-	# snap to tile boundaries (in world space)
 	var sx: int = int(floor(tl_ws.x / TILE) * TILE)
 	var ex: int = int(floor(br_ws.x / TILE) * TILE)
 	var sy: int = int(floor(tl_ws.y / TILE) * TILE)
 	var ey: int = int(floor(br_ws.y / TILE) * TILE)
 
-	# convert each world grid line to SCREEN pixels:
-	# screen = (world - tl_ws) / zoom
+	# helper: snap a float to the center of a screen pixel (crisp 1px lines)
+	func px_snap(v: float) -> float:
+		return floor(v) + 0.5
+
+	# verticals
 	for x in range(sx, ex + TILE, TILE):
 		var is_major := posmod(x, CHUNK_PX) == 0
 		var col := axis_col if x == 0 else (major_col if is_major else minor_col)
 		var xs := (float(x) - tl_ws.x) / zoom.x
+		xs = px_snap(xs)
 		draw_line(Vector2(xs, 0.0), Vector2(xs, vs.y), col, 2.0 if is_major else 1.0)
 
+	# horizontals
 	for y in range(sy, ey + TILE, TILE):
 		var is_major2 := posmod(y, CHUNK_PX) == 0
 		var col2 := axis_col if y == 0 else (major_col if is_major2 else minor_col)
 		var ys := (float(y) - tl_ws.y) / zoom.y
+		ys = px_snap(ys)
 		draw_line(Vector2(0.0, ys), Vector2(vs.x, ys), col2, 2.0 if is_major2 else 1.0)
 
 func _register_console_cmd() -> void:
@@ -65,14 +67,12 @@ func _register_console_cmd() -> void:
 			return
 		var cmd: String = String(a[0]).to_lower()
 		match cmd:
-			"on":
-				visible = true;  Bus.send_output("grid on"); queue_redraw()
-			"off":
-				visible = false; Bus.send_output("grid off")
+			"on":  visible = true;  Bus.send_output("grid on"); queue_redraw()
+			"off": visible = false; Bus.send_output("grid off")
 			"alpha":
 				if a.size() >= 2:
 					var v := clampf(float(a[1]), 0.0, 1.0)
-					minor_col.a = v * 0.40; major_col.a = v * 0.75; axis_col.a  = v * 1.00
+					minor_col.a = v * 0.40; major_col.a = v * 0.75; axis_col.a = v * 1.00
 					queue_redraw()
 					Bus.send_output("grid alpha = %.2f" % v)
 				else:

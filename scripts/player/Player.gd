@@ -14,16 +14,27 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_register_console_cmds()
 
+const TILE := 32
+const HALF_TILE := TILE * 0.5
+
+func _snap_to_tile_center(p: Vector2) -> Vector2:
+	return Vector2(round(p.x / TILE) * TILE + HALF_TILE,
+				   round(p.y / TILE) * TILE + HALF_TILE)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var target := get_global_mouse_position()
+		var target := _snap_to_tile_center(get_global_mouse_position())
 		agent.set_target_position(target)
 		Bus.send_output("moving to (%.1f, %.1f)" % [target.x, target.y])
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
 	if agent.is_navigation_finished():
-		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
+		# Ease into exact center of the nearest tile to prevent tiny residual drift
+		var snap := _snap_to_tile_center(global_position)
+		global_position = global_position.lerp(snap, clamp(10.0 * delta, 0.0, 1.0))
+		velocity = Vector2.ZERO
 		move_and_slide()
 		return
 	var next := agent.get_next_path_position()
@@ -127,7 +138,7 @@ func _register_console_cmds() -> void:
 
 	ConsoleRouter.register_cmd("goto", func(a):
 		if a.size() < 2: Bus.send_output("usage: goto <x> <y>"); return
-		var tgt := Vector2(float(a[0]), float(a[1]))
+		var tgt := _snap_to_tile_center(Vector2(float(a[0]), float(a[1])))
 		agent.set_target_position(tgt)
 		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
-	, "Move to position")
+		, "Move to position")
