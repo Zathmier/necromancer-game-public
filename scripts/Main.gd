@@ -9,11 +9,15 @@ const WorldViewScript= preload("res://scripts/world/WorldDebugPainter.gd")
 func _ready() -> void:
 	_configure_window()
 
-	# Grid
+	# Grid as a screen overlay (unaffected by camera transforms)
+	var grid_layer := CanvasLayer.new()
+	grid_layer.name = "GridLayer"
+	add_child(grid_layer)
+
 	var grid := Node2D.new()
 	grid.name = "Grid"
 	grid.set_script(GridScript)
-	add_child(grid)
+	grid_layer.add_child(grid)
 
 	# World generator + debug painter
 	var world := Node.new()

@@ -78,22 +78,40 @@ func _ensure_camera() -> void:
 	cam.enabled = true
 	cam.make_current()
 
+var _auto_nav: NavigationRegion2D = null  # add this near the top with your vars
+
 func _ensure_nav_region_for_testing() -> void:
 	var root := get_tree().current_scene
-	if root == null: return
-	if root.find_child("AutoNav", true, false) != null: return
-	var vp := get_viewport_rect().size
+	if root == null:
+		return
+
+	# Reuse if it exists
+	_auto_nav = root.find_child("AutoNav", true, false) as NavigationRegion2D
+	if _auto_nav != null:
+		return
+
+	# Build a HUGE rectangle so you can move anywhere during dev.
+	var R := 20000.0  # 20k px in each direction (~625 tiles @ 32px)
 	var poly := NavigationPolygon.new()
-	poly.add_outline(PackedVector2Array([Vector2(0,0), Vector2(vp.x,0), Vector2(vp.x,vp.y), Vector2(0,vp.y)]))
-	poly.make_polygons_from_outlines() # dev-only; ok to be deprecated
+	poly.add_outline(PackedVector2Array([
+		Vector2(-R, -R),
+		Vector2( R, -R),
+		Vector2( R,  R),
+		Vector2(-R,  R),
+	]))
+	poly.make_polygons_from_outlines()  # lightweight dev triangulation
+
 	var region := NavigationRegion2D.new()
 	region.name = "AutoNav"
 	region.navigation_polygon = poly
+
+	_auto_nav = region
 	call_deferred("_add_nav_region_deferred", root, region)
 
 func _add_nav_region_deferred(root: Node, region: NavigationRegion2D) -> void:
 	if is_instance_valid(root) and region.get_parent() == null:
 		root.add_child(region)
+	_auto_nav = region
 
 # ---- console cmds ----
 func _register_console_cmds() -> void:
