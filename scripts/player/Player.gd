@@ -1,21 +1,32 @@
-# Player.gd — click-to-move prototype
 extends CharacterBody2D
 
-@export var speed: float = 220.0
-var _has_target: bool = false
-var _target_pos: Vector2
+@onready var agent: NavigationAgent2D = $NavigationAgent2D
+@export var speed := 220.0
+
+func _ready() -> void:
+	# Make path following a little forgiving
+	agent.path_desired_distance = 4.0
+	agent.target_desired_distance = 4.0
+	agent.avoidance_enabled = false # can enable later if we add crowds
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		_target_pos = get_global_mouse_position()
-		_has_target = true
+	# Left click to set destination
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var target := get_global_mouse_position()
+		agent.set_target_position(target)
+		get_viewport().set_input_as_handled()
 
-func _physics_process(delta: float) -> void:
-	if _has_target:
-		var to_target: Vector2 = _target_pos - global_position
-		if to_target.length() <= 4.0:
-			velocity = Vector2.ZERO
-			_has_target = false
-		else:
-			velocity = to_target.normalized() * speed
+func _physics_process(_delta: float) -> void:
+	if agent.is_navigation_finished():
+		velocity = Vector2.ZERO
 		move_and_slide()
+		return
+
+	var next := agent.get_next_path_position()
+	var dir := (next - global_position)
+	if dir.length() > 0.001:
+		velocity = dir.normalized() * speed
+	else:
+		velocity = Vector2.ZERO
+
+	move_and_slide()
