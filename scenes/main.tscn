@@ -6,6 +6,7 @@
 [node name="Main" type="Node2D"]
 
 [node name="UI" type="CanvasLayer" parent="."]
+layer = 10
 
 [node name="Console" parent="UI" instance=ExtResource("1_0wfyh")]
 

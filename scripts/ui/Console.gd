@@ -11,24 +11,30 @@ var vbox: VBoxContainer
 var log_box: RichTextLabel
 var input_box: LineEdit
 
+
+
+@onready var input_line: LineEdit = %InputLine
+@onready var root_panel: Control = self
+
 func _ready() -> void:
-	# if you still have a leftover full-screen "Background" node from earlier, kill it
-	if has_node("Background"):
-		$"Background".queue_free()
+	visible = false
+	Eventbus.toggle_console.connect(_on_toggle)
 
-	_build_ui()
-	_log("(console ready)")
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_console"):
+		Eventbus.request_toggle_console()
+		get_viewport().set_input_as_handled()
 
-	# always visible + start focused
-	visible = true
-	await get_tree().process_frame
-	input_box.grab_focus()
+func _on_toggle() -> void:
+	visible = not visible
+	if visible:
+		input_line.grab_focus()
 
-func _unhandled_key_input(event: InputEvent) -> void:
-	# Hitting Enter anywhere jumps focus to the input box.
-	if event.is_action_pressed("ui_accept") and get_viewport().gui_get_focus_owner() != input_box:
-		input_box.grab_focus()
-		accept_event()
+func _on_InputLine_text_submitted(text: String) -> void:
+	if text.strip_edges().is_empty():
+		return
+	Eventbus.send_console(text)
+	input_line.clear()
 
 # ----------------- UI BUILD -----------------
 func _build_ui() -> void:
