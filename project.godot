@@ -15,6 +15,12 @@ run/main_scene="uid://dsuob5h28721r"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+Log="*res://scripts/autoload/Log.gd"
+Bus="*res://scripts/autoload/Bus.gd"
+ConsoleRouter="*res://scripts/autoload/ConsoleRouter.gd"
+
 [display]
 
 window/size/viewport_width=1920

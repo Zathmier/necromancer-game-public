@@ -13,7 +13,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_toggle() -> void:
 	visible = not visible
-	if visible:
+	if visible and is_instance_valid(input_line):
 		input_line.grab_focus()
 
 func _on_InputLine_text_submitted(text: String) -> void:
