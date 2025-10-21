@@ -1,9 +1,15 @@
 extends CharacterBody2D
 # Godot 4.5 — code-only click-to-move, self-building visuals + physics
+# with smooth snap-to-grid landings.
+
+const TILE := 32
+const HALF_TILE := TILE * 0.5
 
 var agent: NavigationAgent2D
 @export var move_speed: float = 240.0
 @export var accel: float = 12.0
+
+var _auto_nav: NavigationRegion2D = null
 
 func _ready() -> void:
 	_ensure_sprite()
@@ -14,15 +20,8 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_register_console_cmds()
 
-const TILE := 32
-const HALF_TILE := TILE * 0.5
-
-func _snap_to_tile_center(p: Vector2) -> Vector2:
-	return Vector2(round(p.x / TILE) * TILE + HALF_TILE,
-				   round(p.y / TILE) * TILE + HALF_TILE)
-
-
 func _unhandled_input(event: InputEvent) -> void:
+	# Left-click sets destination (snapped to tile center)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var target := _snap_to_tile_center(get_global_mouse_position())
 		agent.set_target_position(target)
@@ -37,6 +36,7 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
+
 	var next := agent.get_next_path_position()
 	var dir := (next - global_position)
 	if dir.length() > 0.001:
@@ -46,7 +46,11 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
 	move_and_slide()
 
-# ---- ensure helpers ----
+# ---------------- helpers ----------------
+
+func _snap_to_tile_center(p: Vector2) -> Vector2:
+	return Vector2(round(p.x / TILE) * TILE + HALF_TILE, round(p.y / TILE) * TILE + HALF_TILE)
+
 func _ensure_sprite() -> void:
 	var spr := get_node_or_null("Sprite2D") as Sprite2D
 	if spr == null:
@@ -89,33 +93,26 @@ func _ensure_camera() -> void:
 	cam.enabled = true
 	cam.make_current()
 
-var _auto_nav: NavigationRegion2D = null  # add this near the top with your vars
-
 func _ensure_nav_region_for_testing() -> void:
 	var root := get_tree().current_scene
 	if root == null:
 		return
-
-	# Reuse if it exists
 	_auto_nav = root.find_child("AutoNav", true, false) as NavigationRegion2D
 	if _auto_nav != null:
 		return
 
-	# Build a HUGE rectangle so you can move anywhere during dev.
-	var R := 20000.0  # 20k px in each direction (~625 tiles @ 32px)
+	# HUGE dev polygon so you can roam freely
+	var R := 20000.0
 	var poly := NavigationPolygon.new()
 	poly.add_outline(PackedVector2Array([
-		Vector2(-R, -R),
-		Vector2( R, -R),
-		Vector2( R,  R),
-		Vector2(-R,  R),
+		Vector2(-R, -R), Vector2(R, -R),
+		Vector2(R, R),   Vector2(-R, R)
 	]))
-	poly.make_polygons_from_outlines()  # lightweight dev triangulation
+	poly.make_polygons_from_outlines() # dev-only; fine to keep for now
 
 	var region := NavigationRegion2D.new()
 	region.name = "AutoNav"
 	region.navigation_polygon = poly
-
 	_auto_nav = region
 	call_deferred("_add_nav_region_deferred", root, region)
 
@@ -124,21 +121,24 @@ func _add_nav_region_deferred(root: Node, region: NavigationRegion2D) -> void:
 		root.add_child(region)
 	_auto_nav = region
 
-# ---- console cmds ----
+# ---------------- console cmds ----------------
+
 func _register_console_cmds() -> void:
 	ConsoleRouter.register_cmd("where", func(_a):
 		Bus.send_output("pos = (%.1f, %.1f)" % [global_position.x, global_position.y])
 	, "Show player position")
 
 	ConsoleRouter.register_cmd("speed", func(a):
-		if a.size() < 1: Bus.send_output("usage: speed <value>"); return
+		if a.size() < 1:
+			Bus.send_output("usage: speed <value>"); return
 		move_speed = max(10.0, float(a[0]))
 		Bus.send_output("move_speed = %.1f" % move_speed)
 	, "Set move speed")
 
 	ConsoleRouter.register_cmd("goto", func(a):
-		if a.size() < 2: Bus.send_output("usage: goto <x> <y>"); return
+		if a.size() < 2:
+			Bus.send_output("usage: goto <x> <y>"); return
 		var tgt := _snap_to_tile_center(Vector2(float(a[0]), float(a[1])))
 		agent.set_target_position(tgt)
 		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
-		, "Move to position")
+	, "Move to position")

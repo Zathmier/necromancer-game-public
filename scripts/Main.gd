@@ -9,7 +9,7 @@ const WorldViewScript= preload("res://scripts/world/WorldDebugPainter.gd")
 func _ready() -> void:
 	_configure_window()
 
-	# Grid as a screen overlay (unaffected by camera transforms)
+	# Screen overlay grid so it’s camera-independent
 	var grid_layer := CanvasLayer.new()
 	grid_layer.name = "GridLayer"
 	add_child(grid_layer)
@@ -48,4 +48,4 @@ func _ready() -> void:
 	ui.add_child(console)
 
 func _configure_window() -> void:
-	DisplayServer.window_set_size(Vector2i(1920, 1080))
+	DisplayServer.window_set_size(Vector2i(1920,1080))
