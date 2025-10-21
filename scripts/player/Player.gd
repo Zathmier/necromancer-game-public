@@ -130,3 +130,19 @@ func _register_console_cmds() -> void:
 		agent.set_target_position(tgt)
 		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
 	, "Move to position")
+
+	# world tile & chunk info (TILE=32, CHUNK=48)
+	ConsoleRouter.register_cmd("tile", func(_a):
+		var t := Vector2i(floor(global_position.x / 32.0), floor(global_position.y / 32.0))
+		Bus.send_output("tile = (%d, %d)" % [t.x, t.y])
+	, "Show world tile coords")
+
+	ConsoleRouter.register_cmd("chunk", func(_a):
+		var wx := int(floor(global_position.x / 32.0))
+		var wy := int(floor(global_position.y / 32.0))
+		var cx := int(floor(wx / 48.0))
+		var cy := int(floor(wy / 48.0))
+		var tx := wx - cx * 48
+		var ty := wy - cy * 48
+		Bus.send_output("chunk=(%d,%d) local=(%d,%d)" % [cx, cy, tx, ty])
+	, "Show chunk coords + local tile")
