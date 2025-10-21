@@ -12,7 +12,7 @@ var _last_cam := Vector2.INF
 var _last_size := Vector2.ZERO
 
 func _ready() -> void:
-	# On a CanvasLayer now, so z_index doesn't matter; keep for clarity
+	# we’re on a CanvasLayer (from Main.gd), so z_index doesn’t matter
 	z_index = 0
 	if not Engine.is_editor_hint():
 		_register_console_cmd()
@@ -30,31 +30,33 @@ func _draw() -> void:
 	var cam := get_viewport().get_camera_2d()
 	if cam == null: return
 
-	# Visible rect in both screen and world space
 	var vs: Vector2 = get_viewport_rect().size
-	var tl_world: Vector2 = cam.screen_to_world(Vector2.ZERO)
-	var br_world: Vector2 = cam.screen_to_world(vs)
+	var zoom: Vector2 = cam.zoom
+	# world-space center of the screen
+	var center_ws: Vector2 = cam.get_screen_center_position()
+	# world-space top-left of the visible rectangle
+	var tl_ws: Vector2 = center_ws - (vs * 0.5) * zoom
+	var br_ws: Vector2 = tl_ws + vs * zoom
 
-	# Snap world bounds to tile edges
-	var sx: int = int(floor(tl_world.x / TILE) * TILE)
-	var ex: int = int(floor(br_world.x / TILE) * TILE)
-	var sy: int = int(floor(tl_world.y / TILE) * TILE)
-	var ey: int = int(floor(br_world.y / TILE) * TILE)
+	# snap to tile boundaries (in world space)
+	var sx: int = int(floor(tl_ws.x / TILE) * TILE)
+	var ex: int = int(floor(br_ws.x / TILE) * TILE)
+	var sy: int = int(floor(tl_ws.y / TILE) * TILE)
+	var ey: int = int(floor(br_ws.y / TILE) * TILE)
 
-	# Convert world tile lines → screen pixels and draw
+	# convert each world grid line to SCREEN pixels:
+	# screen = (world - tl_ws) / zoom
 	for x in range(sx, ex + TILE, TILE):
 		var is_major := posmod(x, CHUNK_PX) == 0
 		var col := axis_col if x == 0 else (major_col if is_major else minor_col)
-		var p1: Vector2 = cam.world_to_screen(Vector2(x, sy))
-		var p2: Vector2 = cam.world_to_screen(Vector2(x, ey))
-		draw_line(p1, p2, col, 2.0 if is_major else 1.0)
+		var xs := (float(x) - tl_ws.x) / zoom.x
+		draw_line(Vector2(xs, 0.0), Vector2(xs, vs.y), col, 2.0 if is_major else 1.0)
 
 	for y in range(sy, ey + TILE, TILE):
 		var is_major2 := posmod(y, CHUNK_PX) == 0
 		var col2 := axis_col if y == 0 else (major_col if is_major2 else minor_col)
-		var q1: Vector2 = cam.world_to_screen(Vector2(sx, y))
-		var q2: Vector2 = cam.world_to_screen(Vector2(ex, y))
-		draw_line(q1, q2, col2, 2.0 if is_major2 else 1.0)
+		var ys := (float(y) - tl_ws.y) / zoom.y
+		draw_line(Vector2(0.0, ys), Vector2(vs.x, ys), col2, 2.0 if is_major2 else 1.0)
 
 func _register_console_cmd() -> void:
 	ConsoleRouter.register_cmd("grid", func(a):
@@ -70,9 +72,7 @@ func _register_console_cmd() -> void:
 			"alpha":
 				if a.size() >= 2:
 					var v := clampf(float(a[1]), 0.0, 1.0)
-					minor_col.a = v * 0.40
-					major_col.a = v * 0.75
-					axis_col.a  = v * 1.00
+					minor_col.a = v * 0.40; major_col.a = v * 0.75; axis_col.a  = v * 1.00
 					queue_redraw()
 					Bus.send_output("grid alpha = %.2f" % v)
 				else:

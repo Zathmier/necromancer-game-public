@@ -1,20 +1,19 @@
 extends Node
 const CHUNK_TILES := 48
 
-var seed: int = 1337
+var world_seed: int = 1337
 var noise: FastNoiseLite
 
 func _ready() -> void:
 	_build_noise()
 
 func set_seed(s: int) -> void:
-	seed = s
+	world_seed = s
 	_build_noise()
 
 func _build_noise() -> void:
 	noise = FastNoiseLite.new()
-	noise.seed = seed
-	# TYPE_OPEN_SIMPLEX2 isn't present in some builds — TYPE_SIMPLEX is stable.
+	noise.seed = world_seed
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	noise.frequency = 0.0025
 	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
