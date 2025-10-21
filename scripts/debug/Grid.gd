@@ -12,7 +12,7 @@ var _last_cam := Vector2.INF
 var _last_size := Vector2.ZERO
 
 func _ready() -> void:
-	# This node should live under a CanvasLayer created in Main.gd.
+	# This lives under a CanvasLayer (see Main.gd), so it won’t inherit world transforms.
 	z_index = 0
 	if not Engine.is_editor_hint():
 		_register_console_cmd()
@@ -22,7 +22,8 @@ func _process(_dt: float) -> void:
 	if cam == null:
 		return
 	var sz := get_viewport_rect().size
-	if _last_cam.distance_to(cam.global_position) > 8.0 or _last_size != sz:
+	# Redraw if camera moved enough or viewport changed.
+	if _last_cam.distance_to(cam.global_position) > 1.0 or _last_size != sz:
 		_last_cam = cam.global_position
 		_last_size = sz
 		queue_redraw()
@@ -34,32 +35,30 @@ func _draw() -> void:
 
 	var vs: Vector2 = get_viewport_rect().size
 	var zoom: Vector2 = cam.zoom
-	# world-space center of the screen
+	# IMPORTANT: camera is pixel-snapped each frame in Player.gd
 	var center_ws: Vector2 = cam.get_screen_center_position()
-	# world-space top-left / bottom-right
 	var tl_ws: Vector2 = center_ws - (vs * 0.5) * zoom
 	var br_ws: Vector2 = tl_ws + vs * zoom
 
-	# snap world bounds to tile edges
+	# Snap world bounds to tile edges
 	var sx: int = int(floor(tl_ws.x / TILE) * TILE)
 	var ex: int = int(floor(br_ws.x / TILE) * TILE)
 	var sy: int = int(floor(tl_ws.y / TILE) * TILE)
 	var ey: int = int(floor(br_ws.y / TILE) * TILE)
 
-	# verticals
+	# Draw lines at pixel centers to avoid shimmer
 	for x in range(sx, ex + TILE, TILE):
 		var is_major := posmod(x, CHUNK_PX) == 0
 		var col := axis_col if x == 0 else (major_col if is_major else minor_col)
 		var xs := (float(x) - tl_ws.x) / zoom.x
-		xs = _px_snap(xs)
+		xs = floor(xs) + 0.5
 		draw_line(Vector2(xs, 0.0), Vector2(xs, vs.y), col, 2.0 if is_major else 1.0)
 
-	# horizontals
 	for y in range(sy, ey + TILE, TILE):
 		var is_major2 := posmod(y, CHUNK_PX) == 0
 		var col2 := axis_col if y == 0 else (major_col if is_major2 else minor_col)
 		var ys := (float(y) - tl_ws.y) / zoom.y
-		ys = _px_snap(ys)
+		ys = floor(ys) + 0.5
 		draw_line(Vector2(0.0, ys), Vector2(vs.x, ys), col2, 2.0 if is_major2 else 1.0)
 
 func _register_console_cmd() -> void:
@@ -84,9 +83,3 @@ func _register_console_cmd() -> void:
 				else:
 					Bus.send_output("usage: grid alpha <0..1>")
 	, "Control grid overlay")
-
-# --- helpers (top-level, not nested) ---
-
-# snap to the middle of a screen pixel to keep 1px lines crisp
-func _px_snap(v: float) -> float:
-	return floor(v) + 0.5

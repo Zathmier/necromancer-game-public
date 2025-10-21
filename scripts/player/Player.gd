@@ -1,6 +1,5 @@
 extends CharacterBody2D
-# Godot 4.5 — code-only click-to-move, self-building visuals + physics
-# with smooth snap-to-grid landings.
+# Click-to-move with smooth snap-to-grid landings, pixel-snapped camera.
 
 const TILE := 32
 const HALF_TILE := TILE * 0.5
@@ -8,6 +7,10 @@ const HALF_TILE := TILE * 0.5
 var agent: NavigationAgent2D
 @export var move_speed: float = 240.0
 @export var accel: float = 12.0
+
+# Track the snapped target to avoid “snap while en route” glitches
+var target_pos: Vector2 = Vector2.INF
+var has_target: bool = false
 
 var _auto_nav: NavigationRegion2D = null
 
@@ -21,22 +24,38 @@ func _ready() -> void:
 		_register_console_cmds()
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Left-click sets destination (snapped to tile center)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var target := _snap_to_tile_center(get_global_mouse_position())
-		agent.set_target_position(target)
-		Bus.send_output("moving to (%.1f, %.1f)" % [target.x, target.y])
+		var tgt := _snap_to_tile_center(get_global_mouse_position())
+		_set_destination(tgt)
+		Bus.send_output("moving to (%.1f, %.1f)" % [tgt.x, tgt.y])
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
+	# Pixel-snap camera so world tiles & grid are 1:1 with screen pixels
+	var cam := get_node_or_null("Camera2D") as Camera2D
+	if cam:
+		cam.global_position = cam.global_position.round()
+
+	# Arrival logic: only snap when REALLY at the target
+	if has_target:
+		var d := global_position.distance_to(target_pos)
+		if d <= 1.25: # nice crisp finish
+			global_position = target_pos
+			velocity = Vector2.ZERO
+			has_target = false
+			agent.set_target_position(global_position) # clear residual path
+			move_and_slide()
+			return
+
 	if agent.is_navigation_finished():
-		# Ease into exact center of the nearest tile to prevent tiny residual drift
+		# No path (e.g., you clicked very close). Ease to nearest tile center but don’t fight a live path.
 		var snap := _snap_to_tile_center(global_position)
 		global_position = global_position.lerp(snap, clamp(10.0 * delta, 0.0, 1.0))
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
 
+	# Follow path normally
 	var next := agent.get_next_path_position()
 	var dir := (next - global_position)
 	if dir.length() > 0.001:
@@ -44,9 +63,15 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.lerp(desired, clamp(accel * delta, 0.0, 1.0))
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, move_speed * delta)
+
 	move_and_slide()
 
 # ---------------- helpers ----------------
+
+func _set_destination(p: Vector2) -> void:
+	target_pos = p
+	has_target = true
+	agent.set_target_position(p)
 
 func _snap_to_tile_center(p: Vector2) -> Vector2:
 	return Vector2(round(p.x / TILE) * TILE + HALF_TILE, round(p.y / TILE) * TILE + HALF_TILE)
@@ -80,8 +105,9 @@ func _ensure_agent() -> void:
 		agent = NavigationAgent2D.new()
 		agent.name = "NavigationAgent2D"
 		add_child(agent)
-	agent.path_desired_distance = 4.0
-	agent.target_desired_distance = 4.0
+	# Tighten distances so arrival detection is clean
+	agent.path_desired_distance = 2.0
+	agent.target_desired_distance = 1.0
 	agent.avoidance_enabled = false
 
 func _ensure_camera() -> void:
@@ -108,7 +134,7 @@ func _ensure_nav_region_for_testing() -> void:
 		Vector2(-R, -R), Vector2(R, -R),
 		Vector2(R, R),   Vector2(-R, R)
 	]))
-	poly.make_polygons_from_outlines() # dev-only; fine to keep for now
+	poly.make_polygons_from_outlines() # dev-only
 
 	var region := NavigationRegion2D.new()
 	region.name = "AutoNav"
@@ -139,6 +165,6 @@ func _register_console_cmds() -> void:
 		if a.size() < 2:
 			Bus.send_output("usage: goto <x> <y>"); return
 		var tgt := _snap_to_tile_center(Vector2(float(a[0]), float(a[1])))
-		agent.set_target_position(tgt)
+		_set_destination(tgt)
 		Bus.send_output("goto (%.1f, %.1f)" % [tgt.x, tgt.y])
 	, "Move to position")
