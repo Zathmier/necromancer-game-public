@@ -1,75 +1,91 @@
+# Grid.gd — Godot 4.5, pure world-anchored overlay (never follows player/camera)
+# Paste-ready. Attach to a Node2D that lives under a static world root (NOT under Player/Camera).
+
 extends Node2D
-# World-anchored grid for 32x32 tiles.
-# Draws lines at x=n*TILE, y=n*TILE in world space.
-# Godot 4.5, pure GDScript (no ternary).
 
-const TILE := 32
-const MAJOR_EVERY := 8
+@export var tile_size: int = 32
+@export var chunk_tiles: int = 48            # 48×48 tiles per chunk per project contract
+@export var tile_color: Color = Color(1, 1, 1, 0.25)
+@export var chunk_color: Color = Color(1, 1, 1, 0.6)
+@export var show_chunks: bool = true
 
-@export var show_grid: bool = true
-@export var minor_col: Color = Color(1, 1, 1, 0.08)
-@export var major_col: Color = Color(1, 1, 1, 0.20)
+func _ready() -> void:
+	# Belt-and-suspenders to guarantee world anchoring:
+	top_level = true                          # ignore parent transforms entirely
+	global_position = Vector2.ZERO            # draw-space origin = world origin
+	rotation = 0.0
+	scale = Vector2.ONE
+	z_index = 4096                            # make sure lines render on top
+	set_process(true)
 
-func _process(_dt: float) -> void:
-	if show_grid:
-		queue_redraw()
+func _process(_delta: float) -> void:
+	queue_redraw()                            # cheap enough; redraw every frame
 
 func _draw() -> void:
-	if not show_grid:
+	if not visible:
 		return
 
-	var cam := get_viewport().get_camera_2d()
-	if cam == null:
-		return
+	var aabb := _get_visible_world_aabb_px()
+	var ts := max(tile_size, 1)
 
-	# Visible world rect (world-space) centered on camera
-	var vp_size: Vector2 = get_viewport_rect().size
-	var zoom: Vector2 = cam.zoom
-	var half_ws: Vector2 = vp_size * zoom * 0.5
-	var center_ws: Vector2 = cam.global_position
+	var x0 := floori(aabb.position.x / ts)
+	var y0 := floori(aabb.position.y / ts)
+	var x1 := ceili((aabb.position.x + aabb.size.x) / ts)
+	var y1 := ceili((aabb.position.y + aabb.size.y) / ts)
 
-	var tl_ws: Vector2 = center_ws - half_ws
-	var br_ws: Vector2 = center_ws + half_ws
+	# Tile grid (thin)
+	for tx in range(x0, x1 + 1):
+		var x := float(tx * ts)
+		draw_line(Vector2(x, y0 * ts), Vector2(x, y1 * ts), tile_color, 1.0, false)
+	for ty in range(y0, y1 + 1):
+		var y := float(ty * ts)
+		draw_line(Vector2(x0 * ts, y), Vector2(x1 * ts, y), tile_color, 1.0, false)
 
-	# Convert to inclusive tile index range
-	var tl_tx: int = floori(tl_ws.x / TILE)
-	var tl_ty: int = floori(tl_ws.y / TILE)
-	var br_tx: int = ceili(br_ws.x / TILE) - 1
-	var br_ty: int = ceili(br_ws.y / TILE) - 1
+	# Chunk grid (bolder) — exact multiples of (tile_size * chunk_tiles), aligned to world (0,0)
+	if show_chunks:
+		var chunk_px := ts * chunk_tiles
+		var cx0 := floori(x0 / chunk_tiles)
+		var cy0 := floori(y0 / chunk_tiles)
+		var cx1 := ceili(x1 / chunk_tiles)
+		var cy1 := ceili(y1 / chunk_tiles)
 
-	# Safety early-out
-	if br_tx < tl_tx or br_ty < tl_ty:
-		return
+		for cx in range(cx0, cx1 + 1):
+			var x2 := float(cx * chunk_px)
+			draw_line(Vector2(x2, y0 * ts), Vector2(x2, y1 * ts), chunk_color, 1.0, false)
+		for cy in range(cy0, cy1 + 1):
+			var y2 := float(cy * chunk_px)
+			draw_line(Vector2(x0 * ts, y2), Vector2(x1 * ts, y2), chunk_color, 1.0, false)
 
-	# Keep ~1px line width on screen regardless of zoom
-	var base_lw: float = min(1.0 / zoom.x, 1.0 / zoom.y)
+# --- Public helpers (for console debugging we’ll wire next) ---
 
-	# Vertical lines: x = tx*TILE
-	for tx in range(tl_tx, br_tx + 1):
-		var x := float(tx * TILE)
-		var is_major: bool = posmod(tx, MAJOR_EVERY) == 0
-		var col: Color = major_col if is_major else minor_col
-		var w: float = (2.0 / zoom.x) if is_major else base_lw
+func get_visible_tile_bounds() -> Rect2i:
+	var aabb := _get_visible_world_aabb_px()
+	var ts := max(tile_size, 1)
+	var tx0 := floori(aabb.position.x / ts)
+	var ty0 := floori(aabb.position.y / ts)
+	var tx1 := ceili((aabb.position.x + aabb.size.x) / ts) - 1
+	var ty1 := ceili((aabb.position.y + aabb.size.y) / ts) - 1
+	return Rect2i(Vector2i(tx0, ty0), Vector2i(tx1 - tx0 + 1, ty1 - ty0 + 1))
 
-		draw_line(
-			Vector2(x, float(tl_ty * TILE)),
-			Vector2(x, float((br_ty + 1) * TILE)),
-			col,
-			w,
-			false
-		)
+func get_visible_chunk_bounds() -> Rect2i:
+	var t := get_visible_tile_bounds()
+	var cx0 := floori(t.position.x / chunk_tiles)
+	var cy0 := floori(t.position.y / chunk_tiles)
+	var cx1 := floori((t.position.x + t.size.x - 1) / chunk_tiles)
+	var cy1 := floori((t.position.y + t.size.y - 1) / chunk_tiles)
+	return Rect2i(Vector2i(cx0, cy0), Vector2i(cx1 - cx0 + 1, cy1 - cy0 + 1))
 
-	# Horizontal lines: y = ty*TILE
-	for ty in range(tl_ty, br_ty + 1):
-		var y := float(ty * TILE)
-		var is_major2: bool = posmod(ty, MAJOR_EVERY) == 0
-		var col2: Color = major_col if is_major2 else minor_col
-		var w2: float = (2.0 / zoom.y) if is_major2 else base_lw
+# --- Internals ---
 
-		draw_line(
-			Vector2(float(tl_tx * TILE), y),
-			Vector2(float((br_tx + 1) * TILE), y),
-			col2,
-			w2,
-			false
-		)
+func _get_visible_world_aabb_px() -> Rect2:
+	# Convert the on-screen rectangle into WORLD coordinates via the canvas transform.
+	# Works for zoomed cameras and keeps the grid in true world-space.
+	var vp := get_viewport()
+	var rect_px := vp.get_visible_rect().size
+
+	var ct := vp.get_canvas_transform()       # Transform2D
+	var scale := Vector2(ct.x.length(), ct.y.length())
+	var top_left_world := -ct.origin
+	var size_world := rect_px / scale
+
+	return Rect2(top_left_world, size_world)
