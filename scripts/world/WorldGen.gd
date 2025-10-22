@@ -1,7 +1,7 @@
 extends Node
 const CHUNK_TILES := 48
 
-var world_seed: int = 1337
+var world_seed: int = 132897129
 var noise: FastNoiseLite
 
 func _ready() -> void:

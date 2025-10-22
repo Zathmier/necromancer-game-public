@@ -1,69 +1,50 @@
 extends Node2D
-class_name Grid
+# World-space grid that aligns exactly to TileMap cell borders.
 
-@export var tile_size: float = 32.0
-@export var major_every: int = 8
-@export var color_minor: Color = Color(1, 1, 1, 0.08)
-@export var color_major: Color = Color(1, 1, 1, 0.16)
+const TILE := 32
+const MAJOR_EVERY := 8
 
-# If your WorldTileMap isn't at (0,0), either set this or point to it below.
-@export var tilemap_origin: Vector2 = Vector2.ZERO
-@export var use_tilemap_origin_from: NodePath
-
-func _ready() -> void:
-	if use_tilemap_origin_from != NodePath():
-		var n := get_node_or_null(use_tilemap_origin_from)
-		if n is Node2D:
-			tilemap_origin = (n as Node2D).global_position
+@export var show_grid: bool = true
+@export var minor_col: Color = Color(1, 1, 1, 0.08)
+@export var major_col: Color = Color(1, 1, 1, 0.20)
 
 func _process(_dt: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
+	if not show_grid:
+		return
+
 	var cam := get_viewport().get_camera_2d()
 	if cam == null:
 		return
 
-	var vp_size: Vector2 = get_viewport_rect().size
-	var z: Vector2 = cam.zoom
+	# Visible world rect in world units (pixels)
+	var vp: Vector2 = get_viewport_rect().size
+	var size_ws: Vector2 = vp * cam.zoom
+	var tl_ws: Vector2 = cam.get_screen_center_position() - size_ws * 0.5
+	var br_ws: Vector2 = tl_ws + size_ws
 
-	# World coords of screen center, derive top-left in world space.
-	var world_center: Vector2 = cam.get_screen_center_position()
-	var top_left_world: Vector2 = world_center - (vp_size * 0.5) / z
+	# Snap to tile edges using floor/ceil (works with negatives)
+	var left:  int = floori(tl_ws.x / TILE) * TILE
+	var right: int = ceili (br_ws.x / TILE) * TILE
+	var top:   int = floori(tl_ws.y / TILE) * TILE
+	var bot:   int = ceili (br_ws.y / TILE) * TILE
 
-	# Align to TileMap origin if it’s offset.
-	var top_left_rel: Vector2 = top_left_world - tilemap_origin
+	# Keep grid lines ~1px on screen
+	var w_x: float = 1.0 / cam.zoom.x
+	var w_y: float = 1.0 / cam.zoom.y
 
-	# Step size in pixels between lines (accounts for zoom).
-	var step_px_x: float = tile_size * z.x
-	var step_px_y: float = tile_size * z.y
+	# Vertical lines
+	for x in range(left, right + 1, TILE):
+		var is_major := posmod(x / TILE, MAJOR_EVERY) == 0
+		var col := major_col if is_major else minor_col
+		var lw  := (2.0 / cam.zoom.x) if is_major else w_x
+		draw_line(Vector2(x, top), Vector2(x, bot), col, lw, true)
 
-	# Pixel offset to the first grid line on-screen.
-	var start_px_x: float = -fposmod(top_left_rel.x, tile_size) * z.x
-	var start_px_y: float = -fposmod(top_left_rel.y, tile_size) * z.y
-
-	# -------- Vertical lines --------
-	var x: float = start_px_x
-	var ix: int = int(floor(top_left_rel.x / tile_size))
-	while x <= vp_size.x + 1.0:
-		var is_major: bool = (ix % major_every) == 0
-		var c: Color = color_minor
-		if is_major:
-			c = color_major
-		var px: float = floor(x) + 0.5  # center 1px stroke on pixel
-		draw_line(Vector2(px, 0.0), Vector2(px, vp_size.y), c, 1.0, false)
-		x += step_px_x
-		ix += 1
-
-	# -------- Horizontal lines --------
-	var y: float = start_px_y
-	var iy: int = int(floor(top_left_rel.y / tile_size))
-	while y <= vp_size.y + 1.0:
-		var is_major2: bool = (iy % major_every) == 0
-		var c2: Color = color_minor
-		if is_major2:
-			c2 = color_major
-		var py: float = floor(y) + 0.5
-		draw_line(Vector2(0.0, py), Vector2(vp_size.x, py), c2, 1.0, false)
-		y += step_px_y
-		iy += 1
+	# Horizontal lines
+	for y in range(top, bot + 1, TILE):
+		var is_major2 := posmod(y / TILE, MAJOR_EVERY) == 0
+		var col2 := major_col if is_major2 else minor_col
+		var lw2  := (2.0 / cam.zoom.y) if is_major2 else w_y
+		draw_line(Vector2(left, y), Vector2(right, y), col2, lw2, true)
