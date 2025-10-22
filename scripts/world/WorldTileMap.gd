@@ -15,6 +15,8 @@ const BIOME_COLORS := {
 	"rock":   Color(0.24, 0.28, 0.22),
 }
 
+const DEBUG_STREAM_LOG := false
+
 var _tilemap: TileMap
 var _tileset: TileSet
 var _atlas_id: int = -1
@@ -87,20 +89,29 @@ func _build_tileset() -> void:
 
 # ---------- streaming ----------
 
+static func _chunk_of_tile(t: int) -> int:
+	# floor division that behaves for negatives
+	return floori(float(t) / CHUNK_TILES)
+
 func _world_rect_visible(cam: Camera2D, vp_size: Vector2) -> Rect2:
 	var size_ws: Vector2 = vp_size * cam.zoom
 	var tl_ws: Vector2 = cam.get_screen_center_position() - size_ws * 0.5
 	return Rect2(tl_ws, size_ws)
 
 func _update_stream(world_rect: Rect2) -> void:
-	var tl_tile := Vector2i(floori(world_rect.position.x / TILE), floori(world_rect.position.y / TILE))
+	# Convert world rect -> tile rect with RIGHT/BOTTOM *inclusive*
+	var tl: Vector2 = world_rect.position
 	var br: Vector2 = world_rect.position + world_rect.size
-	var br_tile := Vector2i(floori(br.x / TILE), floori(br.y / TILE))
+	var tl_tile := Vector2i(floori(tl.x / TILE), floori(tl.y / TILE))
+	var br_tile := Vector2i(                       # inclusive: subtract a tiny epsilon
+		floori((br.x - 0.0001) / TILE),
+		floori((br.y - 0.0001) / TILE)
+	)
 
-	var min_cx: int = floori(float(tl_tile.x) / CHUNK_TILES) - CHUNK_MARGIN
-	var min_cy: int = floori(float(tl_tile.y) / CHUNK_TILES) - CHUNK_MARGIN
-	var max_cx: int = floori(float(br_tile.x) / CHUNK_TILES) + CHUNK_MARGIN
-	var max_cy: int = floori(float(br_tile.y) / CHUNK_TILES) + CHUNK_MARGIN
+	var min_cx: int = _chunk_of_tile(tl_tile.x) - CHUNK_MARGIN
+	var min_cy: int = _chunk_of_tile(tl_tile.y) - CHUNK_MARGIN
+	var max_cx: int = _chunk_of_tile(br_tile.x) + CHUNK_MARGIN
+	var max_cy: int = _chunk_of_tile(br_tile.y) + CHUNK_MARGIN
 
 	var wanted: Dictionary[Vector2i, bool] = {}
 
@@ -109,16 +120,17 @@ func _update_stream(world_rect: Rect2) -> void:
 			var c: Vector2i = Vector2i(cx, cy)
 			wanted[c] = true
 			if not _loaded_chunks.has(c):
+				if DEBUG_STREAM_LOG: print("LOAD ", c)
 				_load_chunk(c)
 
-	# figure out which loaded chunks are no longer wanted
+	# unload what we no longer need
 	var to_remove: Array[Vector2i] = []
 	for k in _loaded_chunks.keys():
 		var ck := k as Vector2i
 		if not wanted.has(ck):
 			to_remove.append(ck)
-
 	for c in to_remove:
+		if DEBUG_STREAM_LOG: print("UNLOAD ", c)
 		_unload_chunk(c)
 
 func _load_chunk(c: Vector2i) -> void:
