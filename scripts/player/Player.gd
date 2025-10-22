@@ -1,6 +1,6 @@
 extends CharacterBody2D
-# Obstacle-aware grid-following click-to-move (8-direction), exact tile-center landings,
-# with a target marker that disappears on arrival.
+# Obstacle-aware grid click-to-move (8-dir) with a target marker.
+# Smooth, exact tile-center landings. Godot 4.5 / GDScript.
 
 const TILE := 32
 const HALF_TILE := TILE * 0.5
@@ -11,8 +11,10 @@ const SEARCH_RADIUS_TILES := 96  # half-size of the temporary A* window
 var _path: PackedVector2Array = PackedVector2Array()  # world-space tile centers
 var _current: Vector2 = Vector2.ZERO                  # current waypoint
 var _has_path: bool = false
+var _last_dir: Vector2 = Vector2.ZERO                 # last non-zero movement dir (for “behind” test)
 
-var _marker: Node2D = null  # click marker
+var _marker: Node2D = null                            # click marker (reused)
+@onready var _worldgen: Node = get_tree().current_scene.find_child("WorldGen", true, false)
 
 func _enter_tree() -> void:
 	# Snap after parent/scene positions are finalized.
@@ -30,7 +32,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var target_ws: Vector2 = _snap_to_tile_center(get_global_mouse_position())
 		_set_destination(target_ws)
-		_show_marker(target_ws)
+		if _has_path:
+			_show_marker(target_ws)
+		else:
+			_hide_marker()
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
@@ -47,7 +52,9 @@ func _physics_process(delta: float) -> void:
 	# Move toward current waypoint without overshoot.
 	var to: Vector2 = _current - global_position
 	var dist: float = to.length()
-	var step: float = move_speed * delta
+
+	# Clamp the per-frame step so one slow frame cannot “pop” us too far.
+	var step: float = min(move_speed * delta, TILE * 0.45)
 
 	if dist <= step:
 		# Arrived exactly at this waypoint; advance to the next.
@@ -63,7 +70,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	velocity = to.normalized() * move_speed
+	var dir := to / dist
+	velocity = dir * move_speed
+	_last_dir = dir
 	move_and_slide()
 
 # ---------------- Pathing ----------------
@@ -71,16 +80,37 @@ func _physics_process(delta: float) -> void:
 func _set_destination(target_ws: Vector2) -> void:
 	var start_t: Vector2i = _world_to_tile(global_position)
 	var goal_t:  Vector2i = _world_to_tile(target_ws)
-	_path = _build_astar_path(start_t, goal_t)
+
+	var new_path: PackedVector2Array = _build_astar_path(start_t, goal_t)
+	if new_path.size() == 0:
+		_path = PackedVector2Array()
+		_has_path = false
+		return
+
+	# --- continuity fix: start from the closest forward node ---
+	# Drop leading nodes while the next is closer than the current.
+	var i := 0
+	while i < new_path.size() - 1 and new_path[i].distance_to(global_position) >= new_path[i + 1].distance_to(global_position):
+		i += 1
+	# If our current motion is opposite the first segment, skip it once.
+	if _last_dir.length() > 0.1 and i < new_path.size():
+		var v := (new_path[i] - global_position).normalized()
+		if v.dot(_last_dir) < -0.2 and (i + 1) < new_path.size():
+			i += 1
+
+	# Keep the remaining tail as our path.
+	_path = PackedVector2Array()
+	for j in range(i, new_path.size()):
+		_path.append(new_path[j])
+
 	_has_path = _path.size() > 0
 	if _has_path:
 		_current = _path[0]
 
 func _build_astar_path(start_t: Vector2i, goal_t: Vector2i) -> PackedVector2Array:
-	var world := get_tree().current_scene
-	var gen := world.find_child("WorldGen", true, false)
-	if gen == null:
-		return _build_chebyshev_path(start_t, goal_t)  # fallback
+	# Fallback if worldgen is missing
+	if _worldgen == null:
+		return _build_chebyshev_path(start_t, goal_t)
 
 	# Window bounds (tile coords)
 	var minx: int = min(start_t.x, goal_t.x) - SEARCH_RADIUS_TILES
@@ -97,26 +127,24 @@ func _build_astar_path(start_t: Vector2i, goal_t: Vector2i) -> PackedVector2Arra
 	grid.offset = Vector2(origin_t.x * TILE + HALF_TILE, origin_t.y * TILE + HALF_TILE)
 	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ALWAYS
 
-	# IMPORTANT: initialize before using set_point_solid()
+	# Initialize first, then mark solids, then apply.
 	grid.update()
 
-	# Mark solids, then update again to apply changes
 	for y in range(size.y):
 		for x in range(size.x):
 			var tx := origin_t.x + x
 			var ty := origin_t.y + y
-			if not _is_walkable(gen, tx, ty):
+			if not _is_walkable(tx, ty):
 				grid.set_point_solid(Vector2i(x, y), true)
 
-	grid.update()  # apply solid map
+	grid.update()
 
 	var from := Vector2i(start_t.x - origin_t.x, start_t.y - origin_t.y)
 	var to   := Vector2i(goal_t.x  - origin_t.x, goal_t.y  - origin_t.y)
 	if not grid.is_in_boundsv(from) or not grid.is_in_boundsv(to):
 		return PackedVector2Array()
 
-	var pts: PackedVector2Array = grid.get_point_path(from, to)
-	return pts  # already world coordinates (thanks to cell_size + offset)
+	return grid.get_point_path(from, to)  # world coordinates (cell_size + offset)
 
 # Fallback path (diagonals first, then straight) if A* can’t be built
 func _build_chebyshev_path(start_t: Vector2i, goal_t: Vector2i) -> PackedVector2Array:
@@ -128,20 +156,20 @@ func _build_chebyshev_path(start_t: Vector2i, goal_t: Vector2i) -> PackedVector2
 	var sy: int = 0 if dy == 0 else (1 if dy > 0 else -1)
 	var n_diag: int = min(abs(dx), abs(dy))
 	var n_ax:   int = max(abs(dx), abs(dy)) - n_diag
-	for i in range(n_diag):
+	for _i in range(n_diag):
 		t.x += sx; t.y += sy; pts.append(_tile_to_world(t))
 	if abs(dx) > abs(dy):
-		for i in range(n_ax):
+		for _i in range(n_ax):
 			t.x += sx; pts.append(_tile_to_world(t))
 	elif abs(dy) > abs(dx):
-		for i in range(n_ax):
+		for _i in range(n_ax):
 			t.y += sy; pts.append(_tile_to_world(t))
 	return pts
 
-func _is_walkable(gen: Node, tx: int, ty: int) -> bool:
+func _is_walkable(tx: int, ty: int) -> bool:
 	# Uses your WorldGen.get_biome(); blocks 'water' and 'rock' by default
-	if gen.has_method("get_biome"):
-		var biome: String = gen.call("get_biome", tx, ty)
+	if _worldgen and _worldgen.has_method("get_biome"):
+		var biome: String = _worldgen.call("get_biome", tx, ty)
 		return biome != "water" and biome != "rock"
 	return true
 
@@ -159,22 +187,23 @@ func _tile_to_world(t: Vector2i) -> Vector2:
 func _snap_to_tile_center(p: Vector2) -> Vector2:
 	return _tile_to_world(_world_to_tile(p))
 
-# ---------------- Click marker ----------------
+# ---------------- Click marker (reused) ----------------
 
-func _show_marker(pos: Vector2) -> void:
-	_hide_marker()
-	var m := Node2D.new()
-	m.name = "ClickMarker"
-	m.z_index = 1000
-	m.position = pos
-	m.set_script(preload("res://scripts/debug/TargetMarker.gd"))
-	add_child(m)
-	_marker = m
+func _show_marker(world_pos: Vector2) -> void:
+	if _marker == null or not is_instance_valid(_marker):
+		_marker = Node2D.new()
+		_marker.name = "ClickMarker"
+		_marker.z_as_relative = false
+		_marker.z_index = 4095  # safe max
+		_marker.set_script(preload("res://scripts/debug/TargetMarker.gd"))
+		get_tree().current_scene.add_child(_marker)
+		_marker.set_as_top_level(true)
+	_marker.global_position = world_pos
+	_marker.visible = true
 
 func _hide_marker() -> void:
 	if _marker and is_instance_valid(_marker):
-		_marker.queue_free()
-	_marker = null
+		_marker.visible = false
 
 # ---------------- Node ensure (visuals & camera only) ----------------
 
