@@ -39,10 +39,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
-	# Pixel-snap the camera so tiles & grid stay aligned to pixels.
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam:
-		cam.global_position = cam.global_position.round()
+		# Pixel-perfect snap that respects zoom (prevents half-pixel drift)
+		var p := cam.global_position * cam.zoom
+		cam.global_position = (Vector2(round(p.x), round(p.y)) / cam.zoom)
 
 	if not _has_path:
 		velocity = Vector2.ZERO
