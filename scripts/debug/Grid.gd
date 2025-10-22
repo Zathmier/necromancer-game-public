@@ -1,6 +1,7 @@
 extends Node2D
-# Pixel-perfect world-space grid aligned to 32x32 TileMap cells.
-# Godot 4.5 — pure GDScript (no ?:), helpers at top level.
+# World-anchored grid for 32x32 tiles.
+# Draws lines at x=n*TILE, y=n*TILE in world space.
+# Godot 4.5, pure GDScript (no ternary).
 
 const TILE := 32
 const MAJOR_EVERY := 8
@@ -21,52 +22,54 @@ func _draw() -> void:
 	if cam == null:
 		return
 
-	# Visible world rect from camera
+	# Visible world rect (world-space) centered on camera
 	var vp_size: Vector2 = get_viewport_rect().size
 	var zoom: Vector2 = cam.zoom
-	var size_ws: Vector2 = vp_size * zoom
-	var tl_ws: Vector2 = cam.get_screen_center_position() - size_ws * 0.5
-	var br_ws: Vector2 = tl_ws + size_ws
+	var half_ws: Vector2 = vp_size * zoom * 0.5
+	var center_ws: Vector2 = cam.global_position
 
-	# Snap to whole-tile edges (works in negatives)
-	var left_edge:  int = floori(tl_ws.x / TILE) * TILE
-	var right_edge: int = ceili (br_ws.x / TILE) * TILE
-	var top_edge:   int = floori(tl_ws.y / TILE) * TILE
-	var bot_edge:   int = ceili (br_ws.y / TILE) * TILE
+	var tl_ws: Vector2 = center_ws - half_ws
+	var br_ws: Vector2 = center_ws + half_ws
 
-	# Base line width ≈ 1px on screen
+	# Convert to inclusive tile index range
+	var tl_tx: int = floori(tl_ws.x / TILE)
+	var tl_ty: int = floori(tl_ws.y / TILE)
+	var br_tx: int = ceili(br_ws.x / TILE) - 1
+	var br_ty: int = ceili(br_ws.y / TILE) - 1
+
+	# Safety early-out
+	if br_tx < tl_tx or br_ty < tl_ty:
+		return
+
+	# Keep ~1px line width on screen regardless of zoom
 	var base_lw: float = min(1.0 / zoom.x, 1.0 / zoom.y)
 
-	# Vertical grid lines
-	for x in range(left_edge, right_edge + 1, TILE):
-		var is_major: bool = posmod(x / TILE, MAJOR_EVERY) == 0
+	# Vertical lines: x = tx*TILE
+	for tx in range(tl_tx, br_tx + 1):
+		var x := float(tx * TILE)
+		var is_major: bool = posmod(tx, MAJOR_EVERY) == 0
 		var col: Color = major_col if is_major else minor_col
 		var w: float = (2.0 / zoom.x) if is_major else base_lw
-		var wx: float = snap_world_x(x, tl_ws, zoom)
 
-		var y1: float = snap_world_y(top_edge, tl_ws, zoom)
-		var y2: float = snap_world_y(bot_edge, tl_ws, zoom)
-		draw_line(Vector2(wx, y1), Vector2(wx, y2), col, w, false)
+		draw_line(
+			Vector2(x, float(tl_ty * TILE)),
+			Vector2(x, float((br_ty + 1) * TILE)),
+			col,
+			w,
+			false
+		)
 
-	# Horizontal grid lines
-	for y in range(top_edge, bot_edge + 1, TILE):
-		var is_major2: bool = posmod(y / TILE, MAJOR_EVERY) == 0
+	# Horizontal lines: y = ty*TILE
+	for ty in range(tl_ty, br_ty + 1):
+		var y := float(ty * TILE)
+		var is_major2: bool = posmod(ty, MAJOR_EVERY) == 0
 		var col2: Color = major_col if is_major2 else minor_col
 		var w2: float = (2.0 / zoom.y) if is_major2 else base_lw
-		var wy: float = snap_world_y(y, tl_ws, zoom)
 
-		var x1: float = snap_world_x(left_edge, tl_ws, zoom)
-		var x2: float = snap_world_x(right_edge, tl_ws, zoom)
-		draw_line(Vector2(x1, wy), Vector2(x2, wy), col2, w2, false)
-
-# ---- helpers (top-level, not nested) ----
-
-func snap_world_x(wx: float, tl_ws: Vector2, zoom: Vector2) -> float:
-	var sx: float = (wx - tl_ws.x) / zoom.x
-	var sx_snap: float = floor(sx) + 0.5
-	return tl_ws.x + sx_snap * zoom.x
-
-func snap_world_y(wy: float, tl_ws: Vector2, zoom: Vector2) -> float:
-	var sy: float = (wy - tl_ws.y) / zoom.y
-	var sy_snap: float = floor(sy) + 0.5
-	return tl_ws.y + sy_snap * zoom.y
+		draw_line(
+			Vector2(float(tl_tx * TILE), y),
+			Vector2(float((br_tx + 1) * TILE), y),
+			col2,
+			w2,
+			false
+		)

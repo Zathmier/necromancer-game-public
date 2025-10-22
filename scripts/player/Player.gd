@@ -41,9 +41,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam:
-		# Pixel-perfect snap that respects zoom (prevents half-pixel drift)
+		# Snap camera to pixel grid in screen space, then map back to world.
 		var p := cam.global_position * cam.zoom
-		cam.global_position = (Vector2(round(p.x), round(p.y)) / cam.zoom)
+		p.x = round(p.x)
+		p.y = round(p.y)
+		cam.global_position = p / cam.zoom
 
 	if not _has_path:
 		velocity = Vector2.ZERO
